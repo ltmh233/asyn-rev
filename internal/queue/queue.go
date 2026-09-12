@@ -1,8 +1,8 @@
 package queue
 
 import (
-	"asyn-rev/internal/config"
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
@@ -14,25 +14,36 @@ type Queue struct {
 	group       string
 }
 
-func (queue *Queue) Produce(ctx context.Context, value string) error {
-	err := queue.redisClient.XAdd(ctx, &redis.XAddArgs{Stream: queue.stream, ID: "*", Values: map[string]interface{}{"taskID": value}}).Err()
+func (queue *Queue) Produce(ctx context.Context, taskID int64) error {
+	err := queue.redisClient.XAdd(ctx, &redis.XAddArgs{Stream: queue.stream, ID: "*", Values: map[string]interface{}{"taskID": taskID}}).Err()
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (queue *Queue) Consume(ctx context.Context, consumer string) (taskID string, messageID string, err error) {
-	result, err := queue.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{Group: queue.group, Consumer: consumer, Streams: []string{queue.stream}}).Result()
+func (queue *Queue) Consume(ctx context.Context, consumer string) (taskID int64, messageID string, err error) {
+	result, err := queue.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{Group: queue.group, Consumer: consumer, Streams: []string{queue.stream, ">"}, Count: 1, Block: 0}).Result()
 	if err != nil {
-		return "", "", err
+		return 0, "", err
+	}
+	if len(result) == 0 || len(result[0].Messages) == 0 {
+		return 0, "", redis.Nil
 	}
 	message := result[0].Messages[0]
-	return message.Values["taskID"].(string), message.ID, nil
+	taskID, ok := message.Values["taskID"].(int64)
+	if !ok {
+		return 0, "", fmt.Errorf("Invalid TaskID")
+	}
+	return taskID, message.ID, nil
 }
 
-func (queue *Queue) Ack() {
-
+func (queue *Queue) Ack(ctx context.Context, messageID string) error {
+	err := queue.redisClient.XAck(ctx, queue.stream, queue.group, messageID).Err()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (queue *Queue) initConsumeGroup(ctx context.Context) error {
@@ -47,11 +58,7 @@ func (queue *Queue) initConsumeGroup(ctx context.Context) error {
 	return nil
 }
 
-func New(ctx context.Context, cfg config.RedisConfig) (*Queue, error) {
-	redisClient, err := newRedisClient(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
+func New(ctx context.Context, redisClient *redis.Client) (*Queue, error) {
 	stream := "asyn-rev:stream:tasks"
 	group := "asyn-rev:consume_group:workers"
 
@@ -61,7 +68,7 @@ func New(ctx context.Context, cfg config.RedisConfig) (*Queue, error) {
 		group:       group,
 	}
 
-	err = queue.initConsumeGroup(ctx)
+	err := queue.initConsumeGroup(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -14,8 +14,14 @@ type RedisConfig struct {
 	Password string `yaml:"password"`
 }
 
+type ServerConfig struct {
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
+}
+
 type Config struct {
-	Redis RedisConfig `yaml:"redis"`
+	Redis  RedisConfig  `yaml:"redis"`
+	Server ServerConfig `yaml:"server"`
 }
 
 func LoadConfig(ctx context.Context) (Config, error) {
