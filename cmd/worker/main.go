@@ -1,7 +1,38 @@
 package main
 
-import "fmt"
+import (
+	"asyn-rev/internal/config"
+	"asyn-rev/internal/queue"
+	"asyn-rev/internal/redisclient"
+	"asyn-rev/internal/taskstore"
+	"asyn-rev/internal/worker"
+	"context"
+	"flag"
+	"log"
+)
 
 func main() {
-	fmt.Print("Hello, worker!")
+	id := flag.Int64("id", 1, "worker id")
+	flag.Parse()
+
+	ctx := context.Background()
+	config, err := config.LoadConfig(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	redisClient, err := redisclient.Init(ctx, config.Redis)
+	if err != nil {
+		log.Fatal(err)
+	}
+	queue, err := queue.New(ctx, redisClient)
+	if err != nil {
+		log.Fatal(err)
+	}
+	taskStore := taskstore.New(ctx, redisClient)
+
+	w := worker.New(*id, queue, taskStore)
+	err = w.Run(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

@@ -12,14 +12,15 @@ import (
 type TaskStore struct {
 	redisClient *redis.Client
 	storeKey    string
+	idKey       string
 }
 
 func (ts *TaskStore) Save(ctx context.Context, task *task.Task) error {
 	err := ts.redisClient.HSet(ctx, ts.key(task.ID), map[string]interface{}{
-		"ID":      task.ID,
-		"Type":    task.Type,
-		"Payload": task.Payload,
-		"Status":  task.Status,
+		"ID":      fmt.Sprint(task.ID),
+		"Type":    fmt.Sprint(task.Type),
+		"Payload": fmt.Sprint(task.Payload),
+		"Status":  fmt.Sprint(task.Status),
 	}).Err()
 	if err != nil {
 		return err
@@ -45,8 +46,21 @@ func (ts *TaskStore) Get(ctx context.Context, taskID int64) (*task.Task, error) 
 	return &task.Task{ID: ID, Type: Type, Payload: Payload, Status: Status}, nil
 }
 
+func (ts *TaskStore) NextID(ctx context.Context) (int64, error) {
+	result, err := ts.redisClient.Incr(ctx, ts.idKey).Result()
+	if err != nil {
+		return 0, err
+	}
+	return result, nil
+}
+
 func (ts *TaskStore) Update(ctx context.Context, task *task.Task) error {
 	return ts.Save(ctx, task)
+}
+
+func (ts *TaskStore) DeleteTask(ctx context.Context, taskID int64) error {
+	err := ts.redisClient.Del(ctx, ts.key(taskID)).Err()
+	return err
 }
 
 func (ts *TaskStore) key(taskID int64) string {
@@ -55,5 +69,6 @@ func (ts *TaskStore) key(taskID int64) string {
 
 func New(ctx context.Context, redisClient *redis.Client) *TaskStore {
 	storeKey := "asyn-rev:task_store"
-	return &TaskStore{redisClient: redisClient, storeKey: storeKey}
+	idKey := "asyn-rev:task_id"
+	return &TaskStore{redisClient: redisClient, storeKey: storeKey, idKey: idKey}
 }

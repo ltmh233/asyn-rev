@@ -3,7 +3,9 @@ package queue
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -14,40 +16,81 @@ type Queue struct {
 	group       string
 }
 
-func (queue *Queue) Produce(ctx context.Context, taskID int64) error {
-	err := queue.redisClient.XAdd(ctx, &redis.XAddArgs{Stream: queue.stream, ID: "*", Values: map[string]interface{}{"taskID": taskID}}).Err()
+func (q *Queue) Produce(ctx context.Context, taskID int64) error {
+	err := q.redisClient.XAdd(ctx, &redis.XAddArgs{Stream: q.stream, ID: "*", Values: map[string]interface{}{"task_id": taskID}}).Err()
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (queue *Queue) Consume(ctx context.Context, consumer string) (taskID int64, messageID string, err error) {
-	result, err := queue.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{Group: queue.group, Consumer: consumer, Streams: []string{queue.stream, ">"}, Count: 1, Block: 0}).Result()
+func (q *Queue) Consume(ctx context.Context, consumer string) (int64, string, bool, error) {
+	result, err := q.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    q.group,
+		Consumer: consumer,
+		Streams:  []string{q.stream, ">"},
+		Count:    1,
+		Block:    2 * time.Second,
+	}).Result()
 	if err != nil {
-		return 0, "", err
+		if err != redis.Nil {
+			return 0, "", false, err
+		}
 	}
 	if len(result) == 0 || len(result[0].Messages) == 0 {
-		return 0, "", redis.Nil
+		return 0, "", false, nil
 	}
 	message := result[0].Messages[0]
-	taskID, ok := message.Values["taskID"].(int64)
+	value, ok := message.Values["task_id"].(string)
 	if !ok {
-		return 0, "", fmt.Errorf("Invalid TaskID")
+		return 0, "", false, fmt.Errorf("invalid taskID")
 	}
-	return taskID, message.ID, nil
+	taskID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, "", false, fmt.Errorf("invalid taskID")
+	}
+	return taskID, message.ID, true, nil
 }
 
-func (queue *Queue) Ack(ctx context.Context, messageID string) error {
-	err := queue.redisClient.XAck(ctx, queue.stream, queue.group, messageID).Err()
+func (q *Queue) Ack(ctx context.Context, messageID string) error {
+	err := q.redisClient.XAck(ctx, q.stream, q.group, messageID).Err()
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (queue *Queue) initConsumeGroup(ctx context.Context) error {
-	err := queue.redisClient.XGroupCreateMkStream(ctx, queue.stream, queue.group, "0-0").Err()
+func (q *Queue) AutoClaim(ctx context.Context, consumer string) (int64, string, bool, error) {
+	result, _, err := q.redisClient.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   q.stream,
+		Group:    q.group,
+		MinIdle:  10 * time.Second,
+		Start:    "0-0",
+		Count:    1,
+		Consumer: consumer,
+	}).Result()
+	if err != nil {
+		if err != redis.Nil {
+			return 0, "", false, err
+		}
+	}
+	if len(result) == 0 {
+		return 0, "", false, nil
+	}
+	message := result[0]
+	value, ok := message.Values["task_id"].(string)
+	if !ok {
+		return 0, "", false, fmt.Errorf("invalid taskID")
+	}
+	taskID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, "", false, err
+	}
+	return taskID, message.ID, true, nil
+}
+
+func (q *Queue) initConsumeGroup(ctx context.Context) error {
+	err := q.redisClient.XGroupCreateMkStream(ctx, q.stream, q.group, "0-0").Err()
 	if err != nil {
 		// 在重复创建GROUP时, 会报错(error) BUSYGROUP Consumer Group name already exists
 		// 无视错误

@@ -1,0 +1,16 @@
+@baseUrl = http://127.0.0.1:8080
+
+### 创建任务
+# @name create_task
+POST {{baseUrl}}/createtask
+Content-Type: application/json
+
+{
+    "type" :"sleep",
+    "payload" :{
+        "seconds" : 5
+    }
+}
+
+### 获取任务状态
+GET {{baseUrl}}/gettask?id={{create_task.response.body.$.task_id}}

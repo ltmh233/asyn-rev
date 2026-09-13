@@ -3,15 +3,19 @@ package worker
 import (
 	"asyn-rev/internal/task"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 )
+
+var ErrTaskExecution = errors.New("task execution failed")
 
 type taskStore interface {
 	Get(ctx context.Context, taskID int64) (*task.Task, error)
 	Update(ctx context.Context, task *task.Task) error
 }
 
-type taskHandler func(ctx context.Context, payload []byte) error
+type taskHandler func(ctx context.Context, payload json.RawMessage) error
 
 type executor struct {
 	handlers  map[task.Type]taskHandler
@@ -23,20 +27,40 @@ func (e *executor) register(taskType task.Type, handler taskHandler) {
 }
 
 func (e *executor) execute(ctx context.Context, taskID int64) error {
-	task, err := e.taskStore.Get(ctx, taskID)
+	t, err := e.taskStore.Get(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	handler, ok := e.handlers[task.Type]
+	handler, ok := e.handlers[t.Type]
 	if !ok {
-		return fmt.Errorf("unknown type of task: %v", task.Type)
+		t.Status = task.TaskStatusFailed
+		err = e.taskStore.Update(ctx, t)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("%w : unknwon type of task: %v", ErrTaskExecution, t.Type)
 	}
-	err = handler(ctx, task.Payload)
+	t.Status = task.TaskStatusRunning
+	err = e.taskStore.Update(ctx, t)
+	if err != nil {
+		return err
+	}
+	err = handler(ctx, t.Payload)
+	if err != nil {
+		t.Status = task.TaskStatusFailed
+		errUpdate := e.taskStore.Update(ctx, t)
+		if errUpdate != nil {
+			return errUpdate
+		}
+		return fmt.Errorf("%w : %v", ErrTaskExecution, err)
+	}
+	t.Status = task.TaskStatusFinished
+	err = e.taskStore.Update(ctx, t)
 	return err
 }
 
-func newExecutor(taskStore taskStore) *executor {
-	executor := executor{handlers: map[task.Type]taskHandler{}, taskStore: taskStore}
+func newExecutor(ts taskStore) *executor {
+	executor := executor{handlers: map[task.Type]taskHandler{}, taskStore: ts}
 	executor.register(task.TaskTypeEmail, task.HandlerTaskTypeEmail)
 	executor.register(task.TaskTypeImage, task.HandlerTaskTypeImage)
 	executor.register(task.TaskTypeSleep, task.HandlerTaskTypeSleep)
