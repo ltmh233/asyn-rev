@@ -67,8 +67,8 @@ func (ts *TaskStore) key(taskID int64) string {
 	return ts.storeKey + fmt.Sprintf(":task:%d", taskID)
 }
 
-func New(ctx context.Context, redisClient *redis.Client) *TaskStore {
+func New(ctx context.Context, r *redis.Client) *TaskStore {
 	storeKey := "asyn-rev:task_store"
 	idKey := "asyn-rev:task_id"
-	return &TaskStore{redisClient: redisClient, storeKey: storeKey, idKey: idKey}
+	return &TaskStore{redisClient: r, storeKey: storeKey, idKey: idKey}
 }

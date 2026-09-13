@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"asyn-rev/internal/worker"
 	"context"
 	"fmt"
 	"strconv"
@@ -60,7 +61,7 @@ func (q *Queue) Ack(ctx context.Context, messageID string) error {
 	return nil
 }
 
-func (q *Queue) AutoClaim(ctx context.Context, consumer string) (int64, string, bool, error) {
+func (q *Queue) AutoClaim(ctx context.Context, consumer string, claimStart string) (int64, string, bool, error) {
 	result, _, err := q.redisClient.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 		Stream:   q.stream,
 		Group:    q.group,
@@ -87,6 +88,53 @@ func (q *Queue) AutoClaim(ctx context.Context, consumer string) (int64, string, 
 		return 0, "", false, err
 	}
 	return taskID, message.ID, true, nil
+}
+
+func (q *Queue) Pending(ctx context.Context, claimStart string) ([]worker.PendingMessage, error) {
+	result, err := q.redisClient.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: q.stream,
+		Group:  q.group,
+		Idle:   0,
+		Start:  claimStart,
+		End:    "+",
+		Count:  100,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+	pending := []worker.PendingMessage{}
+	for _, p := range result {
+		pending = append(pending, worker.PendingMessage{
+			MessageID:     p.ID,
+			Consumer:      p.Consumer,
+			Idle:          p.Idle,
+			DeliveryCount: p.RetryCount,
+		})
+	}
+	return pending, nil
+}
+
+func (q *Queue) Claim(ctx context.Context, worker string, messageID string) (int64, bool, error) {
+	result, err := q.redisClient.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   q.stream,
+		Group:    q.group,
+		Consumer: worker,
+		MinIdle:  1 * time.Second,
+		Messages: []string{messageID},
+	}).Result()
+	if err != nil {
+		return 0, false, err
+	}
+	if len(result) == 0 {
+		return 0, false, nil
+	}
+	message := result[0]
+	value := message.Values["task_id"].(string)
+	taskID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, false, err
+	}
+	return taskID, true, nil
 }
 
 func (q *Queue) initConsumeGroup(ctx context.Context) error {

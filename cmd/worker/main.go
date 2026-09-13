@@ -4,6 +4,7 @@ import (
 	"asyn-rev/internal/config"
 	"asyn-rev/internal/queue"
 	"asyn-rev/internal/redisclient"
+	"asyn-rev/internal/registry"
 	"asyn-rev/internal/taskstore"
 	"asyn-rev/internal/worker"
 	"context"
@@ -29,8 +30,9 @@ func main() {
 		log.Fatal(err)
 	}
 	taskStore := taskstore.New(ctx, redisClient)
+	registry := registry.New(redisClient)
 
-	w := worker.New(*id, queue, taskStore)
+	w := worker.New(*id, queue, taskStore, registry)
 	err = w.Run(ctx)
 	if err != nil {
 		log.Fatal(err)

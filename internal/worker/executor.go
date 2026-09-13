@@ -10,11 +10,6 @@ import (
 
 var ErrTaskExecution = errors.New("task execution failed")
 
-type taskStore interface {
-	Get(ctx context.Context, taskID int64) (*task.Task, error)
-	Update(ctx context.Context, task *task.Task) error
-}
-
 type taskHandler func(ctx context.Context, payload json.RawMessage) error
 
 type executor struct {
