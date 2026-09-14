@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -40,7 +41,7 @@ func HandlerTaskTypeSleep(ctx context.Context, payload json.RawMessage) error {
 	p := SleepPayload{}
 	err := json.Unmarshal(payload, &p)
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while hanlder task sleep json.Unmarshal:%w", err)
 	}
 	time.Sleep(time.Duration(p.Seconds) * time.Second)
 	return nil
@@ -52,8 +53,4 @@ func HandlerTaskTypeEmail(ctx context.Context, payload json.RawMessage) error {
 
 func HandlerTaskTypeImage(ctx context.Context, payload json.RawMessage) error {
 	return nil
-}
-
-func main() {
-	HandlerTaskTypeSleep(context.Background(), Task{}.Payload)
 }

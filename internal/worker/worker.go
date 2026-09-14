@@ -92,7 +92,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		for {
 			pending, err := w.queue.Pending(ctx, w.claimStart)
 			if err != nil {
-				return err
+				return fmt.Errorf("error occur while worker run w.queue.pending: %w", err)
 			}
 			if len(pending) == 0 {
 				w.claimStart = "-"
@@ -108,7 +108,7 @@ func (w *Worker) Run(ctx context.Context) error {
 				if !alive {
 					taskID, claimed, err := w.queue.Claim(ctx, w.String(), p.MessageID)
 					if err != nil {
-						return err
+						return fmt.Errorf("error occur while worker run w.queue.Clain: %w", err)
 					}
 					if !claimed {
 						continue
@@ -133,7 +133,7 @@ func (w *Worker) Run(ctx context.Context) error {
 
 			taskID, messageID, consumed, err := w.queue.Consume(ctx, w.String())
 			if err != nil {
-				return err
+				return fmt.Errorf("error occur while worker run w.queue.consume: %w", err)
 			}
 			if !consumed {
 				continue
@@ -147,11 +147,11 @@ func (w *Worker) Run(ctx context.Context) error {
 		if err != nil {
 			log.Print(err)
 			if !errors.Is(err, ErrTaskExecution) {
-				return err
+				return fmt.Errorf("error occur while worker run w.executor.execute: %w", err)
 			}
 			t, err := w.taskStore.Get(ctx, w.taskID)
 			if err != nil {
-				return err
+				return fmt.Errorf("error occur while worker run w.taskStore.Get: %w", err)
 			}
 
 			if t.RetryCount < t.MaxRetry {
@@ -159,18 +159,18 @@ func (w *Worker) Run(ctx context.Context) error {
 				t.Status = task.TaskStatusPending
 				err = w.taskStore.Update(ctx, t)
 				if err != nil {
-					return err
+					return fmt.Errorf("error occur while worker run w.taskStore.Update: %w", err)
 				}
 
 				err = w.queue.Produce(ctx, t.ID)
 				if err != nil {
-					return err
+					return fmt.Errorf("error occur while worker run w.queue.Produce: %w", err)
 				}
 			}
 
 			err = w.queue.Ack(ctx, w.messageID)
 			if err != nil {
-				return err
+				return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
 			}
 
 			w.reset()
@@ -180,7 +180,7 @@ func (w *Worker) Run(ctx context.Context) error {
 
 		err = w.queue.Ack(ctx, w.messageID)
 		if err != nil {
-			return err
+			return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
 		}
 
 		w.reset()

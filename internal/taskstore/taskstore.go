@@ -3,11 +3,14 @@ package taskstore
 import (
 	"asyn-rev/internal/task"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
 )
+
+var ErrTaskNotFound = errors.New("error not found")
 
 type TaskStore struct {
 	redisClient *redis.Client
@@ -23,7 +26,7 @@ func (ts *TaskStore) Save(ctx context.Context, task *task.Task) error {
 		"Status":  fmt.Sprint(task.Status),
 	}).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while taskStore save task ts.redisClinet.Hset: %w", err)
 	}
 	return nil
 }
@@ -31,14 +34,14 @@ func (ts *TaskStore) Save(ctx context.Context, task *task.Task) error {
 func (ts *TaskStore) Get(ctx context.Context, taskID int64) (*task.Task, error) {
 	result, err := ts.redisClient.HGetAll(ctx, ts.key(taskID)).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error occur while tastStore get task ts.redisClient.HGetAll: %w", err)
 	}
 	if len(result) == 0 {
-		return nil, fmt.Errorf("Task %d Not Found", taskID)
+		return nil, fmt.Errorf("error occur while tastStore get task len(result)==0: %w", ErrTaskNotFound)
 	}
 	ID, err := strconv.ParseInt(result["ID"], 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error occur while taskStore get task strconv.ParseInt: %w", err)
 	}
 	Type := task.Type(result["Type"])
 	Payload := []byte(result["Payload"])
@@ -49,7 +52,7 @@ func (ts *TaskStore) Get(ctx context.Context, taskID int64) (*task.Task, error) 
 func (ts *TaskStore) NextID(ctx context.Context) (int64, error) {
 	result, err := ts.redisClient.Incr(ctx, ts.idKey).Result()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("error occur while taskStore get nextid ts.redisClient.Incr: %w", err)
 	}
 	return result, nil
 }
@@ -60,7 +63,10 @@ func (ts *TaskStore) Update(ctx context.Context, task *task.Task) error {
 
 func (ts *TaskStore) DeleteTask(ctx context.Context, taskID int64) error {
 	err := ts.redisClient.Del(ctx, ts.key(taskID)).Err()
-	return err
+	if err != nil {
+		return fmt.Errorf("error occur while taskstore delete task ts.redisClient.Del: %w", err)
+	}
+	return nil
 }
 
 func (ts *TaskStore) key(taskID int64) string {

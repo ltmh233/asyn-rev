@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/goccy/go-yaml"
@@ -29,11 +30,11 @@ func LoadConfig(ctx context.Context) (Config, error) {
 	data, err := os.ReadFile("./config.yaml")
 
 	if err != nil {
-		return config, err
+		return config, fmt.Errorf("error occur while config loadconfig os.ReadFile: %w", err)
 	}
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		return config, err
+		return config, fmt.Errorf("error occur while config loadconfig yaml.Unmarshal: %w", err)
 	}
 	return config, err
 }

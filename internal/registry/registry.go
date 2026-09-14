@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,7 +17,7 @@ type Registry struct {
 func (r *Registry) Refresh(ctx context.Context, worker string) error {
 	err := r.redisClient.Set(ctx, r.aliveKey+worker, 1, r.ttl).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while registry refresh r.redisClient.Set: %w", err)
 	}
 	return nil
 }
@@ -24,7 +25,7 @@ func (r *Registry) Refresh(ctx context.Context, worker string) error {
 func (r *Registry) Alive(ctx context.Context, worker string) (bool, error) {
 	result, err := r.redisClient.Exists(ctx, r.aliveKey+worker).Result()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("error occur while registry alive r.redisClient.Exists: %w", err)
 	}
 
 	return result == 1, nil

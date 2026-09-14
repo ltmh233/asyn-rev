@@ -20,7 +20,7 @@ type Queue struct {
 func (q *Queue) Produce(ctx context.Context, taskID int64) error {
 	err := q.redisClient.XAdd(ctx, &redis.XAddArgs{Stream: q.stream, ID: "*", Values: map[string]interface{}{"task_id": taskID}}).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while queue produce q.redisClient.XAdd: %w", err)
 	}
 	return nil
 }
@@ -35,7 +35,7 @@ func (q *Queue) Consume(ctx context.Context, consumer string) (int64, string, bo
 	}).Result()
 	if err != nil {
 		if err != redis.Nil {
-			return 0, "", false, err
+			return 0, "", false, fmt.Errorf("error occur while queue consume q.redisClient.XReadGroup: %w", err)
 		}
 	}
 	if len(result) == 0 || len(result[0].Messages) == 0 {
@@ -44,11 +44,11 @@ func (q *Queue) Consume(ctx context.Context, consumer string) (int64, string, bo
 	message := result[0].Messages[0]
 	value, ok := message.Values["task_id"].(string)
 	if !ok {
-		return 0, "", false, fmt.Errorf("invalid taskID")
+		return 0, "", false, fmt.Errorf("error occur while queue consume: invalid taskID")
 	}
 	taskID, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, "", false, fmt.Errorf("invalid taskID")
+		return 0, "", false, fmt.Errorf("error occur while queue consume: invalid taskID")
 	}
 	return taskID, message.ID, true, nil
 }
@@ -56,7 +56,7 @@ func (q *Queue) Consume(ctx context.Context, consumer string) (int64, string, bo
 func (q *Queue) Ack(ctx context.Context, messageID string) error {
 	err := q.redisClient.XAck(ctx, q.stream, q.group, messageID).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while queue ack q.redisClient.XAck: %w", err)
 	}
 	return nil
 }
@@ -100,7 +100,7 @@ func (q *Queue) Pending(ctx context.Context, claimStart string) ([]worker.Pendin
 		Count:  100,
 	}).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error occur while queue pending q.redisClient.XPendingExt: %w", err)
 	}
 	pending := []worker.PendingMessage{}
 	for _, p := range result {
@@ -123,7 +123,7 @@ func (q *Queue) Claim(ctx context.Context, worker string, messageID string) (int
 		Messages: []string{messageID},
 	}).Result()
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("error occur while queue claim q.redisClient.XClaim: %w", err)
 	}
 	if len(result) == 0 {
 		return 0, false, nil
@@ -132,7 +132,7 @@ func (q *Queue) Claim(ctx context.Context, worker string, messageID string) (int
 	value := message.Values["task_id"].(string)
 	taskID, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("error occur while queue claim strconv.ParseInt: %w", err)
 	}
 	return taskID, true, nil
 }
@@ -143,7 +143,7 @@ func (q *Queue) initConsumeGroup(ctx context.Context) error {
 		// 在重复创建GROUP时, 会报错(error) BUSYGROUP Consumer Group name already exists
 		// 无视错误
 		if !strings.Contains(err.Error(), "BUSYGROUP") {
-			return err
+			return fmt.Errorf("error occur while queue init consume group q.redisClient.XGroupCreateMKStream: %w", err)
 		}
 	}
 	return nil
@@ -161,7 +161,7 @@ func New(ctx context.Context, redisClient *redis.Client) (*Queue, error) {
 
 	err := queue.initConsumeGroup(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error occur while queue new queue.initConsumeGroup: %w", err)
 	}
 	return &queue, nil
 }

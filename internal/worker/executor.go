@@ -24,34 +24,37 @@ func (e *executor) register(taskType task.Type, handler taskHandler) {
 func (e *executor) execute(ctx context.Context, taskID int64) error {
 	t, err := e.taskStore.Get(ctx, taskID)
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while executor execute e.taskStore.Get: %w", err)
 	}
 	handler, ok := e.handlers[t.Type]
 	if !ok {
 		t.Status = task.TaskStatusFailed
 		err = e.taskStore.Update(ctx, t)
 		if err != nil {
-			return err
+			return fmt.Errorf("error occur while executor execute e.taskStore.Update: %w", err)
 		}
-		return fmt.Errorf("%w : unknwon type of task: %v", ErrTaskExecution, t.Type)
+		return fmt.Errorf("error occur while executor execute e.handler[]: %w : unknwon type of task: %v", ErrTaskExecution, t.Type)
 	}
 	t.Status = task.TaskStatusRunning
 	err = e.taskStore.Update(ctx, t)
 	if err != nil {
-		return err
+		return fmt.Errorf("error occur while executor execute e.taskStore.Update: %w", err)
+
 	}
 	err = handler(ctx, t.Payload)
 	if err != nil {
 		t.Status = task.TaskStatusFailed
 		errUpdate := e.taskStore.Update(ctx, t)
 		if errUpdate != nil {
-			return errUpdate
+			return fmt.Errorf("error occur while executor execute e.taskStore.Update: %w", errUpdate)
+
 		}
-		return fmt.Errorf("%w : %v", ErrTaskExecution, err)
+		return fmt.Errorf("error occur while executor execute handler: %w : unknwon type of task: %v", ErrTaskExecution, t.Type)
 	}
 	t.Status = task.TaskStatusFinished
 	err = e.taskStore.Update(ctx, t)
-	return err
+	return fmt.Errorf("error occur while executor execute e.taskStore.Update: %w", err)
+
 }
 
 func newExecutor(ts taskStore) *executor {

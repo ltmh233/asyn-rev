@@ -36,15 +36,15 @@ func (s *Service) CreateTask(ctx context.Context, taskType Type, payload []byte)
 		MaxRetry:   3,
 	})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("error occur while task service create task s.taskStore.Save: %w", err)
 	}
 	err = s.queue.Produce(ctx, taskID)
 	if err != nil {
 		errDelete := s.taskStore.DeleteTask(ctx, taskID)
 		if errDelete != nil {
-			return 0, fmt.Errorf("%w;%w", errDelete, err)
+			return 0, fmt.Errorf("error occur while task service create task tasks.queue.Produce and s.taskStore.DeleteTask:%w;%w", errDelete, err)
 		}
-		return 0, err
+		return 0, fmt.Errorf("error occur while task service create task tasks.queue.Produce:%w", err)
 	}
 	return taskID, nil
 }
