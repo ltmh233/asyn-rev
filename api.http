@@ -14,3 +14,6 @@ Content-Type: application/json
 
 ### 获取任务状态
 GET {{baseUrl}}/gettask?id={{create_task.response.body.$.task_id}}
+
+### 获取任务状态
+GET {{baseUrl}}/gettask?id=1

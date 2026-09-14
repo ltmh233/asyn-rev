@@ -20,10 +20,12 @@ type TaskStore struct {
 
 func (ts *TaskStore) Save(ctx context.Context, task *task.Task) error {
 	err := ts.redisClient.HSet(ctx, ts.key(task.ID), map[string]interface{}{
-		"ID":      fmt.Sprint(task.ID),
-		"Type":    fmt.Sprint(task.Type),
-		"Payload": fmt.Sprint(task.Payload),
-		"Status":  fmt.Sprint(task.Status),
+		"ID":         fmt.Sprint(task.ID),
+		"Type":       fmt.Sprint(task.Type),
+		"Payload":    fmt.Sprint(task.Payload),
+		"Status":     fmt.Sprint(task.Status),
+		"RetryCount": fmt.Sprint(task.RetryCount),
+		"MaxRetry":   fmt.Sprint(task.MaxRetry),
 	}).Err()
 	if err != nil {
 		return fmt.Errorf("error occur while taskStore save task ts.redisClinet.Hset: %w", err)
@@ -46,7 +48,22 @@ func (ts *TaskStore) Get(ctx context.Context, taskID int64) (*task.Task, error) 
 	Type := task.Type(result["Type"])
 	Payload := []byte(result["Payload"])
 	Status := task.Status(result["Status"])
-	return &task.Task{ID: ID, Type: Type, Payload: Payload, Status: Status}, nil
+	RetryCount, err := strconv.ParseInt(result["RetryCount"], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("error occur while taskstore get strconv.ParseInt: %w", err)
+	}
+	MaxRetry, err := strconv.ParseInt(result["MaxRetry"], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("error occur while taskstore get strconv.ParseInt: %w", err)
+	}
+	return &task.Task{
+		ID:         ID,
+		Type:       Type,
+		Payload:    Payload,
+		Status:     Status,
+		RetryCount: RetryCount,
+		MaxRetry:   MaxRetry,
+	}, nil
 }
 
 func (ts *TaskStore) NextID(ctx context.Context) (int64, error) {

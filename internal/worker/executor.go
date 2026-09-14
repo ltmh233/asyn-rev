@@ -49,7 +49,7 @@ func (e *executor) execute(ctx context.Context, taskID int64) error {
 			return fmt.Errorf("error occur while executor execute e.taskStore.Update: %w", errUpdate)
 
 		}
-		return fmt.Errorf("error occur while executor execute handler: %w : unknwon type of task: %v", ErrTaskExecution, t.Type)
+		return fmt.Errorf("error occur while executor execute handler: %w; %w", ErrTaskExecution, err)
 	}
 	t.Status = task.TaskStatusFinished
 	err = e.taskStore.Update(ctx, t)

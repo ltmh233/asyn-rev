@@ -35,6 +35,10 @@ type registry interface {
 	Alive(ctx context.Context, worker string) (bool, error)
 }
 
+type retryQueue interface {
+	Push(ctx context.Context, task *task.Task) error
+}
+
 type status string
 
 const (
@@ -52,14 +56,26 @@ type Worker struct {
 	taskStore  taskStore
 	registry   registry
 	claimStart string
+	retryQueue retryQueue
 }
 
 func (w *Worker) String() string {
 	return fmt.Sprintf("worker:%d", w.id)
 }
 
-func New(id int64, q queue, ts taskStore, r registry) *Worker {
-	return &Worker{id: id, status: workerStatusFree, executor: newExecutor(ts), queue: q, taskStore: ts, registry: r, claimStart: "0-0"}
+func New(id int64, q queue, ts taskStore, r registry, rq retryQueue) *Worker {
+	return &Worker{
+		id:         id,
+		status:     workerStatusFree,
+		executor:   newExecutor(ts),
+		queue:      q,
+		taskStore:  ts,
+		registry:   r,
+		claimStart: "-",
+		taskID:     0,
+		messageID:  "",
+		retryQueue: rq,
+	}
 }
 
 func (w *Worker) heartbeat(ctx context.Context) {
@@ -89,39 +105,40 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	for {
 
-		for {
-			pending, err := w.queue.Pending(ctx, w.claimStart)
-			if err != nil {
-				return fmt.Errorf("error occur while worker run w.queue.pending: %w", err)
-			}
-			if len(pending) == 0 {
-				w.claimStart = "-"
-				break
-			}
-			for _, p := range pending {
-				w.claimStart = "(" + p.MessageID
-				alive, err := w.registry.Alive(ctx, p.Consumer)
+		if w.taskID == 0 && w.messageID == "" && w.status == workerStatusFree {
+			for {
+				pending, err := w.queue.Pending(ctx, w.claimStart)
 				if err != nil {
-					log.Print(err)
-					continue
+					return fmt.Errorf("error occur while worker run w.queue.pending: %w", err)
 				}
-				if !alive {
-					taskID, claimed, err := w.queue.Claim(ctx, w.String(), p.MessageID)
+				if len(pending) == 0 {
+					w.claimStart = "-"
+					break
+				}
+				for _, p := range pending {
+					w.claimStart = "(" + p.MessageID
+					alive, err := w.registry.Alive(ctx, p.Consumer)
 					if err != nil {
-						return fmt.Errorf("error occur while worker run w.queue.Clain: %w", err)
-					}
-					if !claimed {
+						log.Print(err)
 						continue
 					}
-					w.set(taskID, p.MessageID, "-")
+					if !alive {
+						taskID, claimed, err := w.queue.Claim(ctx, w.String(), p.MessageID)
+						if err != nil {
+							return fmt.Errorf("error occur while worker run w.queue.Clain: %w", err)
+						}
+						if !claimed {
+							continue
+						}
+						w.set(taskID, p.MessageID, "-")
+						break
+					}
+				}
+				if w.status == workerStatusBusy {
 					break
 				}
 			}
-			if w.status == workerStatusBusy {
-				break
-			}
-		}
-		if w.taskID == 0 && w.messageID == "" && w.status == workerStatusFree {
+
 			// taskID, messageID, claimed, err := w.queue.AutoClaim(ctx, w.String(), w.claimStart)
 			// if err != nil {
 			// 	return err
@@ -131,6 +148,10 @@ func (w *Worker) Run(ctx context.Context) error {
 
 			// } else {
 
+			//}
+		}
+
+		if w.taskID == 0 && w.messageID == "" && w.status == workerStatusFree {
 			taskID, messageID, consumed, err := w.queue.Consume(ctx, w.String())
 			if err != nil {
 				return fmt.Errorf("error occur while worker run w.queue.consume: %w", err)
@@ -140,32 +161,34 @@ func (w *Worker) Run(ctx context.Context) error {
 			}
 			w.set(taskID, messageID, "-")
 
-			//}
 		}
 
-		err := w.executor.execute(ctx, w.taskID)
-		if err != nil {
-			log.Print(err)
-			if !errors.Is(err, ErrTaskExecution) {
-				return fmt.Errorf("error occur while worker run w.executor.execute: %w", err)
-			}
-			t, err := w.taskStore.Get(ctx, w.taskID)
+		if w.taskID != 0 && w.messageID != "" && w.status != workerStatusFree {
+
+			err := w.executor.execute(ctx, w.taskID)
 			if err != nil {
-				return fmt.Errorf("error occur while worker run w.taskStore.Get: %w", err)
-			}
-
-			if t.RetryCount < t.MaxRetry {
-				t.RetryCount += 1
-				t.Status = task.TaskStatusPending
-				err = w.taskStore.Update(ctx, t)
+				log.Print(err)
+				if !errors.Is(err, ErrTaskExecution) {
+					return fmt.Errorf("error occur while worker run w.executor.execute: %w", err)
+				}
+				t, err := w.taskStore.Get(ctx, w.taskID)
 				if err != nil {
-					return fmt.Errorf("error occur while worker run w.taskStore.Update: %w", err)
+					return fmt.Errorf("error occur while worker run w.taskStore.Get: %w", err)
 				}
 
-				err = w.queue.Produce(ctx, t.ID)
+				err = w.retryQueue.Push(ctx, t)
 				if err != nil {
-					return fmt.Errorf("error occur while worker run w.queue.Produce: %w", err)
+					return fmt.Errorf("error occur while worker run w.retryQueue.Push: %w", err)
 				}
+
+				err = w.queue.Ack(ctx, w.messageID)
+				if err != nil {
+					return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
+				}
+
+				w.reset()
+
+				continue
 			}
 
 			err = w.queue.Ack(ctx, w.messageID)
@@ -174,22 +197,14 @@ func (w *Worker) Run(ctx context.Context) error {
 			}
 
 			w.reset()
-
-			continue
 		}
-
-		err = w.queue.Ack(ctx, w.messageID)
-		if err != nil {
-			return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
-		}
-
-		w.reset()
 	}
 }
 
 func (w *Worker) reset() {
 	w.taskID = 0
 	w.messageID = ""
+	w.claimStart = "-"
 	w.status = workerStatusFree
 }
 

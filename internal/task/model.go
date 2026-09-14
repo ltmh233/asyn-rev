@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 )
 
 type Status string
 
 const (
-	TaskStatusPending  Status = "PENDING"
-	TaskStatusRunning  Status = "RUNNING"
-	TaskStatusFinished Status = "FINISHED"
-	TaskStatusFailed   Status = "FAILED"
+	TaskStatusPending          Status = "PENDING"
+	TaskStatusRunning          Status = "RUNNING"
+	TaskStatusFinished         Status = "FINISHED"
+	TaskStatusFailed           Status = "FAILED"
+	TaskStatusWatingRetry      Status = "WAITINGRETRY"
+	TaskStatusRetryCountExceed Status = "RETRYCOUNTEXCEED"
 )
 
 type Type string
@@ -38,13 +39,14 @@ type SleepPayload struct {
 }
 
 func HandlerTaskTypeSleep(ctx context.Context, payload json.RawMessage) error {
-	p := SleepPayload{}
-	err := json.Unmarshal(payload, &p)
-	if err != nil {
-		return fmt.Errorf("error occur while hanlder task sleep json.Unmarshal:%w", err)
-	}
-	time.Sleep(time.Duration(p.Seconds) * time.Second)
-	return nil
+	// p := SleepPayload{}
+	// err := json.Unmarshal(payload, &p)
+	// if err != nil {
+	// 	return fmt.Errorf("error occur while hanlder task sleep json.Unmarshal:%w", err)
+	// }
+	// time.Sleep(time.Duration(p.Seconds) * time.Second)
+	// return nil
+	return fmt.Errorf("err")
 }
 
 func HandlerTaskTypeEmail(ctx context.Context, payload json.RawMessage) error {
