@@ -7,6 +7,7 @@ import (
 	"asyn-rev/internal/registry"
 	"asyn-rev/internal/retryqueue"
 	"asyn-rev/internal/taskstore"
+	"asyn-rev/internal/transition"
 	"asyn-rev/internal/worker"
 	"context"
 	"flag"
@@ -32,9 +33,10 @@ func main() {
 	}
 	taskStore := taskstore.New(ctx, redisClient)
 	registry := registry.New(redisClient)
-	retryQueue := retryqueue.New(redisClient, taskStore, queue)
+	transition := transition.New(redisClient)
+	retryQueue := retryqueue.New(redisClient, taskStore, queue, transition)
 
-	w := worker.New(*id, queue, taskStore, registry, retryQueue)
+	w := worker.New(*id, queue, taskStore, registry, retryQueue, transition)
 	err = w.Run(ctx)
 	if err != nil {
 		log.Fatal(err)

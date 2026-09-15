@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 type Status string
@@ -13,8 +14,9 @@ const (
 	TaskStatusRunning          Status = "RUNNING"
 	TaskStatusFinished         Status = "FINISHED"
 	TaskStatusFailed           Status = "FAILED"
-	TaskStatusWatingRetry      Status = "WAITINGRETRY"
+	TaskStatusWaitingRetry     Status = "WAITINGRETRY"
 	TaskStatusRetryCountExceed Status = "RETRYCOUNTEXCEED"
+	TaskStatusUnknownType      Status = "UNKNWONTYPE"
 )
 
 type Type string
@@ -35,18 +37,31 @@ type Task struct {
 }
 
 type SleepPayload struct {
-	Seconds int `json:"seconds"`
+	Seconds  int `json:"seconds"`
+	IfFailed int `json:"if_failed"`
+}
+
+type TaskHandler func(ctx context.Context, payload json.RawMessage, taskID int64) error
+
+func tsk TaskHandler{
+	
 }
 
 func HandlerTaskTypeSleep(ctx context.Context, payload json.RawMessage) error {
-	// p := SleepPayload{}
-	// err := json.Unmarshal(payload, &p)
-	// if err != nil {
-	// 	return fmt.Errorf("error occur while hanlder task sleep json.Unmarshal:%w", err)
-	// }
-	// time.Sleep(time.Duration(p.Seconds) * time.Second)
-	// return nil
-	return fmt.Errorf("err")
+	tsk := TaskHandler{
+
+	}
+	p := SleepPayload{}
+	err := json.Unmarshal(payload, &p)
+	if err != nil {
+		return fmt.Errorf("error occur while hanlder task sleep json.Unmarshal:%w", err)
+	}
+	if p.IfFailed != 0 {
+		return fmt.Errorf("err")
+	} else {
+		time.Sleep(time.Duration(p.Seconds) * time.Second)
+		return nil
+	}
 }
 
 func HandlerTaskTypeEmail(ctx context.Context, payload json.RawMessage) error {

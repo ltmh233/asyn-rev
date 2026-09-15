@@ -19,7 +19,6 @@ type PendingMessage struct {
 type queue interface {
 	Produce(ctx context.Context, taskID int64) error
 	Consume(ctx context.Context, consumer string) (int64, string, bool, error)
-	AutoClaim(ctx context.Context, consumer string, claimStart string) (int64, string, bool, error)
 	Pending(ctx context.Context, claimStart string) ([]PendingMessage, error)
 	Claim(ctx context.Context, consumer string, messageID string) (int64, bool, error)
 	Ack(ctx context.Context, messageID string) error
@@ -37,6 +36,11 @@ type registry interface {
 
 type retryQueue interface {
 	Push(ctx context.Context, task *task.Task) error
+}
+
+type transition interface {
+	ScheduleRetry(ctx context.Context, taskID int64, messageID string) error
+	TaskFinish(ctx context.Context, taskID int64, messageID string) error
 }
 
 type status string
@@ -57,17 +61,18 @@ type Worker struct {
 	registry   registry
 	claimStart string
 	retryQueue retryQueue
+	transition transition
 }
 
 func (w *Worker) String() string {
 	return fmt.Sprintf("worker:%d", w.id)
 }
 
-func New(id int64, q queue, ts taskStore, r registry, rq retryQueue) *Worker {
+func New(id int64, q queue, ts taskStore, r registry, rq retryQueue, t transition) *Worker {
 	return &Worker{
 		id:         id,
 		status:     workerStatusFree,
-		executor:   newExecutor(ts),
+		executor:   newExecutor(ts, t),
 		queue:      q,
 		taskStore:  ts,
 		registry:   r,
@@ -75,6 +80,7 @@ func New(id int64, q queue, ts taskStore, r registry, rq retryQueue) *Worker {
 		taskID:     0,
 		messageID:  "",
 		retryQueue: rq,
+		transition: t,
 	}
 }
 
@@ -139,16 +145,6 @@ func (w *Worker) Run(ctx context.Context) error {
 				}
 			}
 
-			// taskID, messageID, claimed, err := w.queue.AutoClaim(ctx, w.String(), w.claimStart)
-			// if err != nil {
-			// 	return err
-			// }
-			// if claimed {
-			// 	w.set(taskID, messageID, "-")
-
-			// } else {
-
-			//}
 		}
 
 		if w.taskID == 0 && w.messageID == "" && w.status == workerStatusFree {
@@ -165,35 +161,31 @@ func (w *Worker) Run(ctx context.Context) error {
 
 		if w.taskID != 0 && w.messageID != "" && w.status != workerStatusFree {
 
-			err := w.executor.execute(ctx, w.taskID)
+			err := w.executor.execute(ctx, w.taskID, w.messageID)
 			if err != nil {
 				log.Print(err)
-				if !errors.Is(err, ErrTaskExecution) {
+				if !errors.Is(err, ErrTaskExecution) && !errors.Is(err, ErrUnknwonTaskType) {
 					return fmt.Errorf("error occur while worker run w.executor.execute: %w", err)
 				}
-				t, err := w.taskStore.Get(ctx, w.taskID)
-				if err != nil {
-					return fmt.Errorf("error occur while worker run w.taskStore.Get: %w", err)
+				if errors.Is(err, ErrUnknwonTaskType) {
+					err = w.queue.Ack(ctx, w.messageID)
+					if err != nil {
+						return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
+					}
+
+					w.reset()
+
+					continue
 				}
 
-				err = w.retryQueue.Push(ctx, t)
+				err := w.transition.ScheduleRetry(ctx, w.taskID, w.messageID)
 				if err != nil {
-					return fmt.Errorf("error occur while worker run w.retryQueue.Push: %w", err)
-				}
-
-				err = w.queue.Ack(ctx, w.messageID)
-				if err != nil {
-					return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
+					return fmt.Errorf("error occur while worker run task.ScheduleRetry: %w", err)
 				}
 
 				w.reset()
 
 				continue
-			}
-
-			err = w.queue.Ack(ctx, w.messageID)
-			if err != nil {
-				return fmt.Errorf("error occur while worker run w.queue.Ack: %w", err)
 			}
 
 			w.reset()

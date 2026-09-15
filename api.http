@@ -8,7 +8,8 @@ Content-Type: application/json
 {
     "type" :"sleep",
     "payload" :{
-        "seconds" : 30
+        "if_failed" : 0,
+        "seconds" : 5
     }
 }
 

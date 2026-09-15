@@ -1,6 +1,7 @@
 package taskstore
 
 import (
+	"asyn-rev/internal/rediskey"
 	"asyn-rev/internal/task"
 	"context"
 	"errors"
@@ -20,12 +21,12 @@ type TaskStore struct {
 
 func (ts *TaskStore) Save(ctx context.Context, task *task.Task) error {
 	err := ts.redisClient.HSet(ctx, ts.key(task.ID), map[string]interface{}{
-		"ID":         fmt.Sprint(task.ID),
-		"Type":       fmt.Sprint(task.Type),
-		"Payload":    fmt.Sprint(task.Payload),
-		"Status":     fmt.Sprint(task.Status),
-		"RetryCount": fmt.Sprint(task.RetryCount),
-		"MaxRetry":   fmt.Sprint(task.MaxRetry),
+		"ID":         strconv.FormatInt(task.ID, 10),
+		"Type":       string(task.Type),
+		"Payload":    string(task.Payload),
+		"Status":     string(task.Status),
+		"RetryCount": strconv.FormatInt(task.RetryCount, 10),
+		"MaxRetry":   strconv.FormatInt(task.MaxRetry, 10),
 	}).Err()
 	if err != nil {
 		return fmt.Errorf("error occur while taskStore save task ts.redisClinet.Hset: %w", err)
@@ -91,7 +92,6 @@ func (ts *TaskStore) key(taskID int64) string {
 }
 
 func New(ctx context.Context, r *redis.Client) *TaskStore {
-	storeKey := "asyn-rev:task_store"
-	idKey := "asyn-rev:task_id"
-	return &TaskStore{redisClient: r, storeKey: storeKey, idKey: idKey}
+
+	return &TaskStore{redisClient: r, storeKey: rediskey.TaskStoreStoreKey, idKey: rediskey.TaskStoreIDKey}
 }

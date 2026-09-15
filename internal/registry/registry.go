@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"asyn-rev/internal/rediskey"
 	"context"
 	"fmt"
 	"time"
@@ -32,7 +33,6 @@ func (r *Registry) Alive(ctx context.Context, worker string) (bool, error) {
 }
 
 func New(r *redis.Client) *Registry {
-	aliveKey := "asyn-rev:alive:"
 	ttl := 10 * time.Second
-	return &Registry{redisClient: r, aliveKey: aliveKey, ttl: ttl}
+	return &Registry{redisClient: r, aliveKey: rediskey.RegistryAliveKey, ttl: ttl}
 }

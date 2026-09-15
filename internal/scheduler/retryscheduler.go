@@ -1,4 +1,4 @@
-package sheduler
+package scheduler
 
 import (
 	"asyn-rev/internal/task"

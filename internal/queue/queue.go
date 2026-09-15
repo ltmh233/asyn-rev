@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"asyn-rev/internal/rediskey"
 	"asyn-rev/internal/worker"
 	"context"
 	"fmt"
@@ -61,35 +62,6 @@ func (q *Queue) Ack(ctx context.Context, messageID string) error {
 	return nil
 }
 
-func (q *Queue) AutoClaim(ctx context.Context, consumer string, claimStart string) (int64, string, bool, error) {
-	result, _, err := q.redisClient.XAutoClaim(ctx, &redis.XAutoClaimArgs{
-		Stream:   q.stream,
-		Group:    q.group,
-		MinIdle:  10 * time.Second,
-		Start:    "0-0",
-		Count:    1,
-		Consumer: consumer,
-	}).Result()
-	if err != nil {
-		if err != redis.Nil {
-			return 0, "", false, err
-		}
-	}
-	if len(result) == 0 {
-		return 0, "", false, nil
-	}
-	message := result[0]
-	value, ok := message.Values["task_id"].(string)
-	if !ok {
-		return 0, "", false, fmt.Errorf("invalid taskID")
-	}
-	taskID, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, "", false, err
-	}
-	return taskID, message.ID, true, nil
-}
-
 func (q *Queue) Pending(ctx context.Context, claimStart string) ([]worker.PendingMessage, error) {
 	result, err := q.redisClient.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: q.stream,
@@ -129,7 +101,10 @@ func (q *Queue) Claim(ctx context.Context, worker string, messageID string) (int
 		return 0, false, nil
 	}
 	message := result[0]
-	value := message.Values["task_id"].(string)
+	value, ok := message.Values["task_id"].(string)
+	if !ok {
+		return 0, false, fmt.Errorf("error occur while queue claim message.Values: %w", err)
+	}
 	taskID, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		return 0, false, fmt.Errorf("error occur while queue claim strconv.ParseInt: %w", err)
@@ -150,13 +125,11 @@ func (q *Queue) initConsumeGroup(ctx context.Context) error {
 }
 
 func New(ctx context.Context, redisClient *redis.Client) (*Queue, error) {
-	stream := "asyn-rev:stream:tasks"
-	group := "asyn-rev:consume_group:workers"
 
 	queue := Queue{
 		redisClient: redisClient,
-		stream:      stream,
-		group:       group,
+		stream:      rediskey.QueueStreamKey,
+		group:       rediskey.QueueGroupKey,
 	}
 
 	err := queue.initConsumeGroup(ctx)

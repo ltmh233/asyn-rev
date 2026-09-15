@@ -5,8 +5,9 @@ import (
 	"asyn-rev/internal/queue"
 	"asyn-rev/internal/redisclient"
 	"asyn-rev/internal/retryqueue"
-	"asyn-rev/internal/sheduler"
+	"asyn-rev/internal/scheduler"
 	"asyn-rev/internal/taskstore"
+	"asyn-rev/internal/transition"
 	"context"
 	"log"
 )
@@ -27,8 +28,9 @@ func main() {
 		log.Fatal(err)
 	}
 	taskStore := taskstore.New(ctx, redisClient)
-	retryQueue := retryqueue.New(redisClient, taskStore, queue)
+	transition := transition.New(redisClient)
+	retryQueue := retryqueue.New(redisClient, taskStore, queue, transition)
 
-	scheduler := sheduler.New(retryQueue, taskStore, queue)
+	scheduler := scheduler.New(retryQueue, taskStore, queue)
 	scheduler.Run(ctx)
 }
