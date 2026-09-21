@@ -33,33 +33,6 @@ type RetryQueue struct {
 	transition  transition
 }
 
-func (rq *RetryQueue) Push(ctx context.Context, t *task.Task) error {
-	if t.RetryCount < t.MaxRetry {
-		now := time.Now()
-		err := rq.redisClient.ZAdd(ctx, rq.retryKey, redis.Z{
-			Score:  float64(now.Unix() + (1 << t.RetryCount)),
-			Member: strconv.FormatInt(t.ID, 10),
-		}).Err()
-		if err != nil {
-			return fmt.Errorf("error occur while retryqueue push rq.redisClient.ZAdd: %w", err)
-		}
-		t.RetryCount += 1
-		t.Status = task.TaskStatusWaitingRetry
-		err = rq.taskStore.Update(ctx, t)
-		if err != nil {
-			return fmt.Errorf("error occur while retryqueue push rq.taskStore.Update: %w", err)
-		}
-		return nil
-	} else {
-		t.Status = task.TaskStatusRetryCountExceed
-		err := rq.taskStore.Update(ctx, t)
-		if err != nil {
-			return fmt.Errorf("error occur while retryqueue push rq.taskStore.Update: %w", err)
-		}
-		return nil
-	}
-}
-
 func (rq *RetryQueue) Pop(ctx context.Context) ([]int64, error) {
 	now := time.Now()
 	result, err := rq.redisClient.ZRangeArgs(ctx, redis.ZRangeArgs{
@@ -114,3 +87,4 @@ func New(r *redis.Client, ts taskStore, q queue, t transition) *RetryQueue {
 		transition:  t,
 	}
 }
+ 

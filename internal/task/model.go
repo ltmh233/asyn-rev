@@ -43,14 +43,7 @@ type SleepPayload struct {
 
 type TaskHandler func(ctx context.Context, payload json.RawMessage, taskID int64) error
 
-func tsk TaskHandler{
-	
-}
-
 func HandlerTaskTypeSleep(ctx context.Context, payload json.RawMessage) error {
-	tsk := TaskHandler{
-
-	}
 	p := SleepPayload{}
 	err := json.Unmarshal(payload, &p)
 	if err != nil {
